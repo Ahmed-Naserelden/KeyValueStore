@@ -1,6 +1,5 @@
 import os
 import sys
-import re
 import json
 from datetime import datetime
 
@@ -31,8 +30,10 @@ class KVEngine:
         
         self.NAMESPACE_PATH = None
         self.size = 0
-        self.buffer = [{'oo': {"fs":{'ds': 0, 'ds': 0}} , 'ttl':20}, {'oo': {"fsi":{'ds': 0, 'ds': 0}}},
-                    {'oo': {"fs":{'ds': 0, 'ds': 0}}}, {'oo': {"fsi":{'ds': 0, 'ds': 0}}}]
+        self.buffer = []
+
+        self.buffer_dict = {}
+        self.filtterd_buffer = {}
 
         self.MaxBuffer = 10
 
@@ -40,7 +41,6 @@ class KVEngine:
         print(f"Store path: {self.STORE_PATH}")
         print(f"Log path: {self.LOG_PATH}")
 
-        print ('='*88)
     def switch_namespace(self):
         self.NAMESPACE_PATH = os.path.join(self.STORE_PATH, self.current_namespace)
 
@@ -106,18 +106,17 @@ class KVEngine:
         os.rmdir(table_path)
         pass
 
-    def set_key(self, table, key, value):
-        
-        for item in self.buffer:
-            if table in item and key in item[table]:
-                item[table][key] = value
-                self.size += 1
-                if self.size >= self.MaxBuffer:
-                    self.flush_buffer(table)
-                    self.size = 0
-                return True
-        
-        
+    def set_key(self, table, key, value , ttl=None):
+        print('*' * 50)
+        print(self.buffer)
+        print('*' * 50)
+        self.buffer.append({table: {key: {"value": value, "ttl": ttl}}})    
+        self.size += 1
+        print(self.buffer)
+        if self.size >= self.MaxBuffer:
+            self.flush_buffer(table)
+            self.size = 0
+        return True
 
     def get_key(self, table, key):
         bl = self.buffer
@@ -141,12 +140,22 @@ class KVEngine:
         """
         Delete a key-value pair from a table.
         """
-        pass
+        value = {table: {key: {}}}
+        self.buffer.append(value)
+        # or
+        deleted_key = {table: {key: {}}}
+        self.buffer.append(deleted_key)
 
     def flush_table(self, table):
         """
         Flush a specific table.
         """
+        self.convert_buffer_to_dict()
+        self.get_filtterd_buffer()
+        self.write_file()
+        self.buffer = []
+        self.buffer_dict = {}
+        self.filtterd_buffer = {}
         pass
 
     def compact_table(self, table):
@@ -157,6 +166,7 @@ class KVEngine:
         table_path = os.path.join(self.STORE_PATH, self.current_namespace, table)
         list_files = os.listdir(table_path)
         list_files = sorted(list_files)
+        
         files = []
         for _file in list_files:
             file_path = os.path.join(table_path, _file)
@@ -165,24 +175,22 @@ class KVEngine:
             files.append(d)
 
         compact_dict = dict()
-        for _file in files:
-            for record in _file:
 
-                record_key = list(record.keys())[0]
-                record_value= record[record_key]
-                ttl = record['ttl']
+        for file in files:
+            for record_key in file.keys():
+                record_value= file[record_key]
                 if record_key in compact_dict:
-                    if compact_dict[record_key]['ttl'] < ttl:
-                        compact_dict[record_key] = record
+                    if compact_dict[record_key]['ttl'] < record_value['ttl']:
+                        compact_dict[record_key] = file[record_key]
                 else:
-                    compact_dict[record_key] = record
+                    compact_dict[record_key] = file[record_key]
 
-        data = []
-        for record in compact_dict:
-            data.append(compact_dict[record])
         with open(new_file_path, 'w') as f:
-            json.dump(data, f, indent=4)
+            json.dump(compact_dict, f, indent=4)
 
+        for file in list_files:
+            file_path = os.path.join(table_path, file)
+            os.remove(file_path)
 
     def get_name(self):
         return self.current_namespace
@@ -193,13 +201,32 @@ class KVEngine:
                 log_file.write('')
         with open(self.LOG_FILE_PATH, 'a') as log_file:
             log_file.write(data + '\n')
-        pass
 
     def create_log(self, data, action, namespace=None, table=None, key=None):
-        
         log_entry = f'[{action}] {data} | {namespace} | {table} | {key}'
         return log_entry
     
+    def convert_buffer_to_dict(self):
+        buffer_dict = {}
+        for entry in self.buffer:
+            for table, data in entry.items():
+                if table not in buffer_dict:
+                    buffer_dict[table] = {}
+                for row, values in data.items():
+                    if row not in buffer_dict[table]:
+                        buffer_dict[table][row] = []
+                    buffer_dict[table][row].append(values)
+        self.buffer_dict = buffer_dict
+    
+    def get_filtterd_buffer(self):
+        filtered_buffer = {}                    
+        for table_name, table_data in self.buffer_dict.items():
+            filtered_buffer[table_name] = {}
+            for row_key, row_data_list in table_data.items():
+                for row_data in row_data_list:
+                    filtered_buffer[table_name][row_key] = row_data
+        self.filtterd_buffer = filtered_buffer
+
     def write_file(self):
         for table, rows in self.filtterd_buffer.items():
             table_path = os.path.join(self.NAMESPACE_PATH, table)
@@ -208,9 +235,5 @@ class KVEngine:
                 json.dump(rows, f, indent=4)
 
 
-
 if __name__ == "__main__":
-    print("From main")
     kv = KVEngine()
-    kv.use_namespace("orders")
-    kv.compact_table("oo")

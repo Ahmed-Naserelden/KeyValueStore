@@ -1,0 +1,22 @@
+# write the following line by line after running python3 cli.py
+
+create-namespace iti
+use-namespace iti
+
+create-table collaborators
+set collaborators:collaborator1:sief
+set collaborators:collaborator2:nasr
+get collaborators:collaborator1
+flush collaborators
+
+get collaborators:collaborator2
+set collaborators:collaborator3:otifi
+get collaborators:collaborator3
+set collaborators:collaborator1:siefeldeenMohamed
+flush collaborators 
+
+set collaborators:collaborator3:ahmedOtifi
+set collaborators:collaborator2:ahmedNasreldeen
+flush collaborators
+
+compact collaborators
